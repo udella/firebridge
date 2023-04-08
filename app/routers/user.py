@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
-from firebase_admin import auth
+from firebase_admin import auth, exceptions
 from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter()
 
@@ -12,12 +13,12 @@ class UserReadResponse(BaseModel):
     uid: str
     email: str
     email_verified: bool
-    display_name: str
+    display_name: Optional[str] = None
 
 class UserCreateRequest(BaseModel):
     email: str
     password: str
-    display_name: str
+    display_name: Optional[str] = None
 
 
 
@@ -29,7 +30,7 @@ class UserUpdateRequest(BaseModel):
     uid: str
     email: str
     password: str
-    display_name: str
+    display_name: Optional[str] = None
 
 class UserEmailRequest(BaseModel):
     email: str
@@ -43,9 +44,10 @@ async def update_user(user: UserUpdateRequest):
     try:
         updated_user = auth.update_user(user.uid, email=user.email, password=user.password, display_name=user.display_name)
         return updated_user.to_dict()
-    except auth.AuthError as e:
-        raise HTTPException(status_code=400, detail=f"Error updating user: {e}")
-
+    except exceptions.FirebaseError as e:
+        raise HTTPException(status_code=400, detail=f"FirebaseError updating user: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Unknown Error updating user: {e}")
 
 @router.delete(
     "/delete_user",
@@ -56,9 +58,10 @@ async def delete_user(user: UserDeleteRequest):
     try:
         auth.delete_user(user.uid)
         return {"message": "User deleted successfully"}
-    except auth.AuthError as e:
-        raise HTTPException(status_code=400, detail=f"Error deleting user: {e}")
-
+    except exceptions.FirebaseError as e:
+        raise HTTPException(status_code=400, detail=f"FirebaseError deleting user: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Unknown Error deleting user: {e}")
 
 @router.post(
     "/create_user",
@@ -78,9 +81,11 @@ async def create_user(user: UserCreateRequest):
             password=user.password,
             display_name=user.display_name
         )
-        return user_data.to_dict()
-    except auth.AuthError as e:
-        raise HTTPException(status_code=400, detail=f"Error creating user: {e}")
+        return user_data.as_dict()
+    except exceptions.FirebaseError as e:
+        raise HTTPException(status_code=400, detail=f"FirebaseError creating user: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Unknown Error creating user: {e}")
 
 
 @router.post(
@@ -103,9 +108,10 @@ async def read_user(user: UserReadRequest):
             email_verified=user_data.email_verified,
             display_name=user_data.display_name
         )
-    except auth.AuthError as e:
-        raise HTTPException(status_code=400, detail=f"Error reading user: {e}")
-    
+    except exceptions.FirebaseError as e:
+        raise HTTPException(status_code=400, detail=f"FirebaseError reading user: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Unknown Error reading user: {e}")
 
 @router.post(
     "/send_verification_email",
@@ -117,5 +123,7 @@ async def send_verification_email(user: UserEmailRequest):
         user = auth.get_user_by_email(user.email)
         auth.generate_email_verification_link(user.email)
         return {"message": f"Verification email sent to {user.email}"}
-    except auth.AuthError as e:
-        raise HTTPException(status_code=400, detail=f"Error sending verification email: {e}")
+    except exceptions.FirebaseError as e:
+        raise HTTPException(status_code=400, detail=f"FirebaseError sending verification email: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Unknown Error sending verification email: {e}")
