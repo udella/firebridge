@@ -6,8 +6,10 @@ from typing import Dict, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, constr
 from firebase_admin import firestore, exceptions
+from app.init_firebase import db
 
 router = APIRouter()
+# db = firestore.client()
 
 class FireStorePathNode(BaseModel):
     type: constr(regex='^(collection|document)$')
@@ -33,16 +35,16 @@ async def create_document(doc: DocumentCreateRequest):
     :return: Pydantic model representing the newly created document ID.
     """
     try:
-        db = firestore.client()
+        
 
-        base_path_str = get_path_str(doc.path_nodes)
+        base_path_str = get_db_ref_str(doc.path_nodes)
         if doc.path_nodes[-1].type == "document":
-            path_str = base_path_str + ".set(doc.document_data)"        
-            eval(f"db.{path_str}")
+            db_ref_str = base_path_str + ".set(doc.document_data)"        
+            eval(f"{db_ref_str}")
             return {"detail": "Document created successfully"}
         elif doc.path_nodes[-1].type == "collection":
-            path_str = base_path_str + ".add(doc.document_data)"        
-            doc_ref = eval(f"db.{path_str}")
+            db_ref_str = base_path_str + ".add(doc.document_data)"        
+            doc_ref = eval(f"{db_ref_str}")
             return DocumentCreateResponse(document_id=doc_ref[1].id)
 
     except exceptions.FirebaseError as e:
@@ -70,9 +72,9 @@ async def read_document(doc: DocumentReadRequest):
     :return: Pydantic model representing the document data.
     """
     try:
-        db = firestore.client()
-        path_str = get_path_str(doc.path_nodes)
-        doc_ref = eval(f"db.{path_str}")
+        
+        db_ref_str = get_db_ref_str(doc.path_nodes)
+        doc_ref = eval(f"{db_ref_str}")
         doc_data = doc_ref.get().to_dict()
         if not doc_data:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -106,9 +108,9 @@ async def update_document(doc: DocumentUpdateRequest):
     :return: Pydantic model representing the update status.
     """
     try:
-        db = firestore.client()
-        path_str = get_path_str(doc.path_nodes)
-        doc_ref = eval(f"db.{path_str}")
+        
+        db_ref_str = get_db_ref_str(doc.path_nodes)
+        doc_ref = eval(f"{db_ref_str}")
         doc_ref.update(doc.update_data)
         return DocumentUpdateResponse()
     except exceptions.FirebaseError as e:
@@ -133,13 +135,13 @@ async def delete_document(doc: DocumentDeleteRequest):
     :return: Pydantic model representing the success or failure of the delete operation.
     """
     try:
-        db = firestore.client()
+        
 
         if doc.path_nodes[-1].type == "collection":
             raise HTTPException(status_code=400, detail="Cannot delete a collection")
 
-        path_str = get_path_str(doc.path_nodes)
-        eval(f"db.{path_str}").delete()
+        db_ref_str = get_db_ref_str(doc.path_nodes)
+        eval(f"{db_ref_str}").delete()
 
         return {"detail": "Document deleted successfully"}
     except exceptions.FirebaseError as e:
@@ -167,15 +169,15 @@ async def delete_collection(doc: CollectionDeleteRequest):
     :return: Pydantic model representing the success or failure of the delete operation.
     """
     try:
-        db = firestore.client()
+        
 
         if doc.path_nodes[-1].type == "document":
             raise HTTPException(status_code=400, detail="Cannot delete a document")
         
-        path_str = get_path_str(doc.path_nodes)
+        db_ref_str = get_db_ref_str(doc.path_nodes)
 
-        # docs = eval(f"db.{path_str}").stream()
-        collection_ref = eval(f"db.{path_str}")
+        # docs = eval(f"{db_ref_str}").stream()
+        collection_ref = eval(f"{db_ref_str}")
         batch_delete_docs_in_coll(collection_ref, 100)
         # for doc in docs:
         #     doc.reference.delete()
@@ -231,16 +233,16 @@ async def delete_collection_or_document(doc: CollectionOrDocumentDeleteRequest):
     :return: Pydantic model representing the success or failure of the delete operation.
     """
     try:
-        db = firestore.client()
+        
 
-        path_str = get_path_str(doc.path_nodes)
+        db_ref_str = get_db_ref_str(doc.path_nodes)
 
         if doc.path_nodes[-1].type == "document":
-            eval(f"db.{path_str}").delete()
+            eval(f"{db_ref_str}").delete()
             return {"detail": "Document deleted successfully"}
 
         if doc.path_nodes[-1].type == "collection":
-            collection_ref = eval(f"db.{path_str}")
+            collection_ref = eval(f"{db_ref_str}")
             batch_delete_docs_in_coll(collection_ref, 100)
             return {"detail": "Collection deleted successfully"}
 
@@ -254,8 +256,24 @@ async def delete_collection_or_document(doc: CollectionOrDocumentDeleteRequest):
             raise HTTPException(status_code=400, detail=f"Unknown Error deleting document/collection: {e}")
 
 
-def get_path_str(path_nodes: List[FireStorePathNode]):
+def get_db_ref_str(path_nodes: List[FireStorePathNode]):
+
     path_node_str_list = []
     for node in path_nodes:
-        path_node_str_list.append(f"{node.type}('{node.name}')")
-    return ".".join(path_node_str_list)
+        if isinstance(node, FireStorePathNode):
+            path_node_str_list.append(f"{node.type}('{node.name}')")
+        elif isinstance(node, Dict):
+            path_node_str_list.append(f"{node['type']}('{node['name']}')")
+    return "db."+".".join(path_node_str_list)
+
+def convert_to_path_nodes(path_list: List[Dict[str, str]]) -> List[FireStorePathNode]:
+    """
+    Converts a list of dictionaries with "type" and "name" keys to a list of FireStorePathNode instances.
+
+    :param path_list: List of dictionaries with "type" and "name" keys.
+    :return: List of FireStorePathNode instances.
+    """
+    path_nodes = []
+    for node in path_list:
+        path_nodes.append(FireStorePathNode(type=node["type"], name=node["name"]))
+    return path_nodes
