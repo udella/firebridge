@@ -15,53 +15,37 @@ class UserReadResponse(BaseModel):
     email_verified: bool
     display_name: Optional[str] = None
 
+@router.post(
+    "/read_user",
+    summary="Read a user in Firebase Authentication",
+    response_description="JSON object representing the requested user"
+)
+async def read_user(user: UserReadRequest):
+    """
+    Read a user in Firebase Authentication.
+
+    :param user: Pydantic model representing the user ID of the user to be retrieved.
+    :return: Pydantic model representing the retrieved user.
+    """
+    try:
+        user_data = auth.get_user(user.uid)
+        return UserReadResponse(
+            uid=user_data.uid,
+            email=user_data.email,
+            email_verified=user_data.email_verified,
+            display_name=user_data.display_name
+        )
+    except exceptions.FirebaseError as e:
+        raise HTTPException(status_code=400, detail=f"FirebaseError reading user: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Unknown Error reading user: {e}")
+
+
+
 class UserCreateRequest(BaseModel):
     email: str
     password: str
     display_name: Optional[str] = None
-
-
-
-class UserDeleteRequest(BaseModel):
-    uid: str
-
-
-class UserUpdateRequest(BaseModel):
-    uid: str
-    email: str
-    password: str
-    display_name: Optional[str] = None
-
-class UserEmailRequest(BaseModel):
-    email: str
-
-@router.put(
-    "/update_user",
-    summary="Update a user in Firebase Authentication",
-    response_description="JSON object representing the updated user"
-)
-async def update_user(user: UserUpdateRequest):
-    try:
-        updated_user = auth.update_user(user.uid, email=user.email, password=user.password, display_name=user.display_name)
-        return updated_user.to_dict()
-    except exceptions.FirebaseError as e:
-        raise HTTPException(status_code=400, detail=f"FirebaseError updating user: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Unknown Error updating user: {e}")
-
-@router.delete(
-    "/delete_user",
-    summary="Delete a user in Firebase Authentication",
-    response_description="JSON object representing the deleted user"
-)
-async def delete_user(user: UserDeleteRequest):
-    try:
-        auth.delete_user(user.uid)
-        return {"message": "User deleted successfully"}
-    except exceptions.FirebaseError as e:
-        raise HTTPException(status_code=400, detail=f"FirebaseError deleting user: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Unknown Error deleting user: {e}")
 
 @router.post(
     "/create_user",
@@ -88,30 +72,51 @@ async def create_user(user: UserCreateRequest):
         raise HTTPException(status_code=400, detail=f"Unknown Error creating user: {e}")
 
 
-@router.post(
-    "/read_user",
-    summary="Read a user in Firebase Authentication",
-    response_description="JSON object representing the requested user"
-)
-async def read_user(user: UserReadRequest):
-    """
-    Read a user in Firebase Authentication.
 
-    :param user: Pydantic model representing the user ID of the user to be retrieved.
-    :return: Pydantic model representing the retrieved user.
-    """
+
+class UserDeleteRequest(BaseModel):
+    uid: str
+
+@router.delete(
+    "/delete_user",
+    summary="Delete a user in Firebase Authentication",
+    response_description="JSON object representing the deleted user"
+)
+async def delete_user(user: UserDeleteRequest):
     try:
-        user_data = auth.get_user(user.uid)
-        return UserReadResponse(
-            uid=user_data.uid,
-            email=user_data.email,
-            email_verified=user_data.email_verified,
-            display_name=user_data.display_name
-        )
+        auth.delete_user(user.uid)
+        return {"message": "User deleted successfully"}
     except exceptions.FirebaseError as e:
-        raise HTTPException(status_code=400, detail=f"FirebaseError reading user: {e}")
+        raise HTTPException(status_code=400, detail=f"FirebaseError deleting user: {e}")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Unknown Error reading user: {e}")
+        raise HTTPException(status_code=400, detail=f"Unknown Error deleting user: {e}")
+
+
+
+class UserUpdateRequest(BaseModel):
+    uid: str
+    email: str
+    password: str
+    display_name: Optional[str] = None
+
+@router.put(
+    "/update_user",
+    summary="Update a user in Firebase Authentication",
+    response_description="JSON object representing the updated user"
+)
+async def update_user(user: UserUpdateRequest):
+    try:
+        updated_user = auth.update_user(user.uid, email=user.email, password=user.password, display_name=user.display_name)
+        return updated_user.to_dict()
+    except exceptions.FirebaseError as e:
+        raise HTTPException(status_code=400, detail=f"FirebaseError updating user: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Unknown Error updating user: {e}")
+
+
+
+class UserEmailRequest(BaseModel):
+    email: str
 
 @router.post(
     "/send_verification_email",

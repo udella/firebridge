@@ -1,3 +1,4 @@
+# GPT PROMPT
 # Give me an simple example to create a FastAPI router for "creating doc" in Firestore using Pydantic models and API documentation. Make sure there is doc along with function.
 
 import traceback
@@ -33,23 +34,17 @@ async def create_document(doc: DocumentCreateRequest):
     """
     try:
         db = firestore.client()
-        path_node_str_list = []
-        last_node_is_document = False
-        for idx, node in enumerate(doc.path_nodes):
-            path_node_str_list.append(f"{node.type}('{node.name}')")
-            if idx + 1 == len(doc.path_nodes) and node.type == "collection":
-                path_node_str_list.append("add(doc.document_data)")
-            elif idx + 1 == len(doc.path_nodes) and node.type == "document":
-                last_node_is_document = True
-                path_node_str_list.append("set(doc.document_data)")
-            
-        path_str = ".".join(path_node_str_list)
-        if last_node_is_document:
+
+        base_path_str = get_path_str(doc.path_nodes)
+        if doc.path_nodes[-1].type == "document":
+            path_str = base_path_str + ".set(doc.document_data)"        
             eval(f"db.{path_str}")
             return {"detail": "Document created successfully"}
-        else:
+        elif doc.path_nodes[-1].type == "collection":
+            path_str = base_path_str + ".add(doc.document_data)"        
             doc_ref = eval(f"db.{path_str}")
             return DocumentCreateResponse(document_id=doc_ref[1].id)
+
     except exceptions.FirebaseError as e:
         raise HTTPException(status_code=400, detail=f"Error creating document: {e}")
     except Exception as e:
@@ -76,11 +71,7 @@ async def read_document(doc: DocumentReadRequest):
     """
     try:
         db = firestore.client()
-        path_node_str_list = []
-        for node in doc.path_nodes:
-            path_node_str_list.append(f"{node.type}('{node.name}')")
-            
-        path_str = ".".join(path_node_str_list)
+        path_str = get_path_str(doc.path_nodes)
         doc_ref = eval(f"db.{path_str}")
         doc_data = doc_ref.get().to_dict()
         if not doc_data:
@@ -116,11 +107,7 @@ async def update_document(doc: DocumentUpdateRequest):
     """
     try:
         db = firestore.client()
-        path_node_str_list = []
-        for idx, node in enumerate(doc.path_nodes):
-            path_node_str_list.append(f"{node.type}('{node.name}')")
-        
-        path_str = ".".join(path_node_str_list)
+        path_str = get_path_str(doc.path_nodes)
         doc_ref = eval(f"db.{path_str}")
         doc_ref.update(doc.update_data)
         return DocumentUpdateResponse()
@@ -147,17 +134,128 @@ async def delete_document(doc: DocumentDeleteRequest):
     """
     try:
         db = firestore.client()
-        path_node_str_list = []
-        for node in doc.path_nodes:
-            path_node_str_list.append(f"{node.type}('{node.name}')")
-            
-        path_str = ".".join(path_node_str_list)
+
+        if doc.path_nodes[-1].type == "collection":
+            raise HTTPException(status_code=400, detail="Cannot delete a collection")
+
+        path_str = get_path_str(doc.path_nodes)
         eval(f"db.{path_str}").delete()
-        
+
         return {"detail": "Document deleted successfully"}
     except exceptions.FirebaseError as e:
         raise HTTPException(status_code=400, detail=f"Error deleting document: {e}")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Unknown Error deleting document: {e}")
+        if isinstance(e, HTTPException):
+            raise e
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown Error reading document: {e}")
 
-# TODO: Add support for delete a collection
+
+class CollectionDeleteRequest(BaseModel):
+    path_nodes: List[FireStorePathNode]
+
+@router.delete(
+    "/delete_collection",
+    summary="Delete a collection from Firestore",
+    response_description="JSON object representing the success or failure of the delete operation",
+)
+async def delete_collection(doc: CollectionDeleteRequest):
+    """
+    Delete a collection from Firestore.
+
+    :param doc: Pydantic model representing the collection path to be deleted.
+    :return: Pydantic model representing the success or failure of the delete operation.
+    """
+    try:
+        db = firestore.client()
+
+        if doc.path_nodes[-1].type == "document":
+            raise HTTPException(status_code=400, detail="Cannot delete a document")
+        
+        path_str = get_path_str(doc.path_nodes)
+
+        # docs = eval(f"db.{path_str}").stream()
+        collection_ref = eval(f"db.{path_str}")
+        batch_delete_docs_in_coll(collection_ref, 100)
+        # for doc in docs:
+        #     doc.reference.delete()
+
+        return {"detail": "Collection deleted successfully"}
+    except exceptions.FirebaseError as e:
+        raise HTTPException(status_code=400, detail=f"Error deleting collection: {e}")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown Error deleting document: {e}")
+
+def batch_delete_docs_in_coll(collection_ref, batch_size):
+    """
+    Delete all documents in a collection and the collection itself.
+
+    :param collection_ref: Reference to the collection to be deleted.
+    :param batch_size: The batch size for deleting documents.
+    """
+    docs = collection_ref.limit(batch_size).stream()
+    deleted = 0
+
+    # Delete documents in batches
+    for doc in docs:
+        print(f"Deleting document {doc.id}...")
+        doc.reference.delete()
+        deleted += 1
+
+    # Recurse on the next batch of documents
+    if deleted >= batch_size:
+        return delete_collection(collection_ref, batch_size)
+
+    # # Delete the collection itself
+    # print(f"Deleting collection {collection_ref.id}...")
+    # collection_ref.delete()
+
+
+class CollectionOrDocumentDeleteRequest(BaseModel):
+    path_nodes: List[FireStorePathNode]
+
+
+@router.delete(
+    "/delete_collection_or_document",
+    summary="Delete a collection or document from Firestore",
+    response_description="JSON object representing the success or failure of the delete operation"
+)
+async def delete_collection_or_document(doc: CollectionOrDocumentDeleteRequest):
+    """
+    Delete a collection or document from Firestore.
+
+    :param doc: Pydantic model representing the collection or document path to be deleted.
+    :return: Pydantic model representing the success or failure of the delete operation.
+    """
+    try:
+        db = firestore.client()
+
+        path_str = get_path_str(doc.path_nodes)
+
+        if doc.path_nodes[-1].type == "document":
+            eval(f"db.{path_str}").delete()
+            return {"detail": "Document deleted successfully"}
+
+        if doc.path_nodes[-1].type == "collection":
+            collection_ref = eval(f"db.{path_str}")
+            batch_delete_docs_in_coll(collection_ref, 100)
+            return {"detail": "Collection deleted successfully"}
+
+        raise HTTPException(status_code=400, detail="Invalid path, must end with document or collection")
+    except exceptions.FirebaseError as e:
+        raise HTTPException(status_code=400, detail=f"Error deleting document/collection: {e}")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown Error deleting document/collection: {e}")
+
+
+def get_path_str(path_nodes: List[FireStorePathNode]):
+    path_node_str_list = []
+    for node in path_nodes:
+        path_node_str_list.append(f"{node.type}('{node.name}')")
+    return ".".join(path_node_str_list)

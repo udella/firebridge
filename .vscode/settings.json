@@ -1,3 +1,9 @@
 {
-    "files.autoSave": "off"
+    "files.autoSave": "off",
+    "python.testing.pytestArgs": [
+        "."
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.formatting.provider": "black",
 }
