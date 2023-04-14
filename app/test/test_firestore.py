@@ -2,13 +2,11 @@
 # I am using FastAPI to create an API app interacting with Google Firebase. Please help me to write a FastAPI test for this endpoint
 
 from fastapi.testclient import TestClient
-import pytest
 from app.main import app
-from firebase_admin import firestore, exceptions
 from app.routers.firestore import get_db_ref_str
+from app.init_firebase import db
 
 client = TestClient(app)
-db = firestore.client()
 
 # Main Collection for testing
 main_test_coll_name = "testing"
@@ -214,7 +212,7 @@ def test_delete_collection_or_document():
     assert len(list(docs)) == 0, "Length: {}".format(len(list(docs)))
 
 
-def test_clean_up():
+def test_clean_up_firestore_testing():
     for key, value in collection_path_nodes.items():
         print(key, value)
 

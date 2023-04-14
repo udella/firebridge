@@ -1,15 +1,14 @@
 # GPT PROMPT
 # Give me an simple example to create a FastAPI router for "creating doc" in Firestore using Pydantic models and API documentation. Make sure there is doc along with function.
 
-import traceback
 from typing import Dict, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, constr
-from firebase_admin import firestore, exceptions
+from firebase_admin import exceptions
 from app.init_firebase import db
 
 router = APIRouter()
-# db = firestore.client()
+# db = db
 
 class FireStorePathNode(BaseModel):
     type: constr(regex='^(collection|document)$')
